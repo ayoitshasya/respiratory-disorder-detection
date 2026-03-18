@@ -184,11 +184,11 @@ def train(model, manifest, config, checkpoints_dir, results_dir):
     # Class weights / focal loss
     train_labels = train_manifest[label_col].values
     loss_fn = config.get('loss', 'categorical_crossentropy')
+    # Class imbalance handled by focal loss — class_weight not used with one-hot labels
     class_weight_dict = None
-
     if config.get('class_weights') == 'auto':
-        class_weight_dict = compute_class_weights(train_labels, num_classes)
-        print(f"Class weights: {class_weight_dict}")
+        cw = compute_class_weights(train_labels, num_classes)
+        print(f"Class weights (for reference, handled via focal loss): {cw}")
 
     if loss_fn == 'focal_loss':
         gamma = config.get('focal_gamma', 2.0)
