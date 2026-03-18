@@ -1,0 +1,35 @@
+{
+    "experiment_name": "cnn_baseline_v1",
+    "model": "cnn_baseline",
+    "input_type": "mel",
+    "label_col": "sound_label",
+    "batch_size": 32,
+    "epochs": 100,
+    "learning_rate": 0.001,
+    "lr_min": 1e-6,
+    "weight_decay": 1e-4,
+    "loss": "focal_loss",
+    "focal_gamma": 2.0,
+    "class_weights": "auto",
+    "augmentation": {
+        "spec_augment": true,
+        "time_mask_max_pct": 0.2,
+        "freq_mask_max_pct": 0.15
+    },
+    "early_stopping_patience": 15,
+    "num_classes": 4,
+    "label_map": {
+        "normal": 0,
+        "crackle": 1,
+        "wheeze": 2,
+        "both": 3
+    },
+    "diagnosis_label_map": {
+        "Healthy": 0,
+        "COPD": 1,
+        "URTI": 2,
+        "Bronchiectasis": 3,
+        "LRTI": 4,
+        "Asthma": 5
+    }
+}

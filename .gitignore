@@ -1,0 +1,12 @@
+data/processed/
+data/splits/
+checkpoints/
+results/
+*.npy
+*.keras
+*.tflite
+*.h5
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.zip
