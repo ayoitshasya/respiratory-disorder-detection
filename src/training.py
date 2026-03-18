@@ -14,7 +14,7 @@ import pandas as pd
 from sklearn.metrics import confusion_matrix
 
 from augmentation import compute_class_weights, focal_loss, apply_spec_augment_to_batch
-from preprocessing import load_feature
+from preprocessing import load_feature, pad_or_truncate, TARGET_FRAMES
 
 SEED = 42
 
@@ -107,6 +107,7 @@ def build_dataset(manifest_split, batch_size, is_training=False,
 
     def load_npy(path, label):
         feat = np.load(path.numpy().decode())
+        feat = pad_or_truncate(feat)
         # Add channel dim if 2D: (freq, time) → (freq, time, 1)
         if feat.ndim == 2:
             feat = feat[..., np.newaxis]
@@ -114,7 +115,7 @@ def build_dataset(manifest_split, batch_size, is_training=False,
 
     def tf_load(path, label):
         feat, lbl = tf.py_function(load_npy, [path, label], [tf.float32, tf.int32])
-        feat.set_shape([None, None, None])
+        feat.set_shape([128, TARGET_FRAMES, 1])
         return feat, lbl
 
     ds = tf.data.Dataset.from_tensor_slices((paths, labels))

@@ -197,9 +197,24 @@ def cache_features(manifest, feature_type='mel', overwrite=False):
     return manifest
 
 
+TARGET_FRAMES = 63  # all features padded/truncated to this time length
+
+
+def pad_or_truncate(feat, target_frames=TARGET_FRAMES):
+    """Pad or truncate feature along the time axis to a fixed length."""
+    t = feat.shape[-1]
+    if t < target_frames:
+        pad_width = [(0, 0)] * (feat.ndim - 1) + [(0, target_frames - t)]
+        feat = np.pad(feat, pad_width, mode='constant')
+    elif t > target_frames:
+        feat = feat[..., :target_frames]
+    return feat
+
+
 def load_feature(features_path):
-    """Load a cached .npy feature file."""
-    return np.load(features_path)
+    """Load a cached .npy feature file and pad/truncate to fixed time length."""
+    feat = np.load(features_path)
+    return pad_or_truncate(feat)
 
 
 def get_feature_shape(manifest, feature_type='mel'):
