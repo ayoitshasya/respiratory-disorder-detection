@@ -155,10 +155,7 @@ def apply_spec_augment_to_batch(X_batch, y_batch):
         (augmented_X_batch, y_batch)
     """
     augmented = tf.map_fn(
-        lambda x: tf.stack([
-            spec_augment(x[..., 0]),
-            x[..., 1]   # only augment channel 0 (mel), leave MFCC as-is
-        ], axis=-1),
+        lambda x: tf.expand_dims(spec_augment(x[..., 0]), axis=-1),
         X_batch
     )
     return augmented, y_batch
