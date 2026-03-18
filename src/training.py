@@ -244,7 +244,6 @@ def train(model, manifest, config, checkpoints_dir, results_dir):
         validation_data=val_ds,
         epochs=epochs,
         callbacks=cb_list,
-        class_weight=class_weight_dict,
         verbose=1
     )
 
