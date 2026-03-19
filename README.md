@@ -6,11 +6,11 @@ ML pipeline for classifying respiratory sounds from the ICBHI 2017 dataset using
 
 Classify lung sound recordings into 4 categories:
 - **Normal** — healthy lungs
-- **Crackle** — indicates fluid or infection
-- **Wheeze** — indicates narrowed airways
+- **Crackle** — indicates fluid or infection (discontinuous, explosive sounds)
+- **Wheeze** — indicates narrowed airways (continuous, musical sounds)
 - **Both** — crackle + wheeze combined
 
-Secondary task: predict patient diagnosis (COPD, Pneumonia, URTI, etc.)
+Secondary task: predict patient diagnosis (COPD, Pneumonia, URTI, etc.) from the same audio input.
 
 ## Dataset
 
@@ -19,6 +19,17 @@ Secondary task: predict patient diagnosis (COPD, Pneumonia, URTI, etc.)
 > **Data is not included in this repo** (too large for GitHub).
 > Preprocessed `.npy` features and manifests are available on Google Drive (contact repo owner).
 > Raw dataset available at: https://bhichallenge.med.auth.gr/ICBHI_2017_Challenge
+
+### Class Distribution (Training Set)
+
+| Sound Class | Samples | % of Total |
+|-------------|---------|------------|
+| Normal | 1,643 | 56.8% |
+| Crackle | 626 | 21.7% |
+| Wheeze | 419 | 14.5% |
+| Both | 203 | 7.0% |
+
+> Heavy class imbalance — Normal has 8x more samples than Both. This is why accuracy is a misleading metric and ICBHI score is used instead.
 
 ### Label Maps
 
@@ -43,20 +54,25 @@ Secondary task: predict patient diagnosis (COPD, Pneumonia, URTI, etc.)
 
 ```
 resp-detection/
+├── train_baseline.py           # Baseline CNN — sound classification only
+├── train_final.py              # Multitask CNN — sound + diagnosis heads (final model)
+├── train_resnet.py             # ResNet multitask (experimental, abandoned)
+├── augment_minority.py         # Audio augmentation for minority classes
 ├── main.py                     # CLI entrypoint
 ├── configs/
 │   └── experiment_config.json  # Hyperparameters
 ├── src/
 │   ├── data_loader.py          # Patient-level train/val/test splits
-│   ├── preprocessing.py        # Butterworth filter, mel-spectrogram, MFCC
+│   ├── preprocessing.py        # Butterworth filter, mel-spectrogram
 │   ├── augmentation.py         # Audio augmentation + SpecAugment
-│   ├── models.py               # CNN architectures (baseline, 1D, MobileNet-style)
+│   ├── models.py               # CNN architectures
 │   ├── multitask_model.py      # Shared backbone + sound + diagnosis heads
 │   ├── training.py             # Focal loss, cosine LR, ICBHI score tracking
 │   ├── evaluation.py           # Confusion matrix, metrics, training curves
 │   └── export_tflite.py        # TFLite int8 quantization export
-├── augment_minority.py         # Audio augmentation script for minority classes
 └── data/                       # Not tracked in git — see Google Drive
+    ├── checkpoints/            # Saved .keras model files
+    ├── results/                # Training curves, confusion matrices (PNG)
     └── processed/
         ├── manifest.csv        # Original splits (5,319 samples)
         ├── manifest_aug.csv    # Augmented splits (~21k samples)
@@ -68,23 +84,77 @@ resp-detection/
 
 ## Pipeline
 
-1. **Patient-level splitting** — 63/19/19 patients for train/val/test (no data leakage)
-2. **Feature extraction** — Butterworth bandpass filter (100–2000 Hz) → mel-spectrogram (128×63)
-3. **Augmentation** — Time stretch, pitch shift, gaussian noise on minority classes
-4. **Training** — Focal loss (γ=2.0), cosine LR decay, ICBHI score tracking
-5. **Evaluation** — Per-class metrics, confusion matrix, ICBHI score
-6. **Export** — TFLite int8 quantization for mobile deployment
+### 1. Patient-Level Splitting (63/19/19 patients)
+Recordings from the same patient stay in one split only. Prevents data leakage — without this, the model memorises a patient's breathing style rather than learning disease patterns.
+
+### 2. Preprocessing
+- **Butterworth bandpass filter** (4th order, 100–2000 Hz) — removes heart noise (<100 Hz) and equipment noise (>2000 Hz). Butterworth chosen for maximally flat frequency response (no ripple distortion).
+- **Mel spectrogram** (128 mel bins, n_fft=2048, hop_length=512) — converts audio to a 2D frequency×time image. Mel scale mimics human hearing (logarithmic), better suited to medical audio than linear spectrograms.
+- **Fixed shape** — all clips padded or truncated to 63 time frames → final shape (128, 63, 1).
+
+### 3. Data Augmentation (minority classes only)
+Applied to training set only. Val/test never augmented.
+
+| Technique | Effect | Why |
+|-----------|--------|-----|
+| Time stretch (0.80–1.20x) | Slows/speeds audio | Duration variation is irrelevant to class |
+| Pitch shift (±1–3 semitones) | Shifts frequency | Patient chest size varies pitch slightly |
+| Gaussian noise (std=0.003–0.005) | Adds microphone noise | Simulates real hospital recording variation |
+| Stretch + noise combined | Both above | Extra diversity for most augmented copies |
+
+Copies per class: Normal×3, Crackle×8, Wheeze×11, Both×20 → ~21k augmented samples.
+
+> **Note:** The 21k augmented dataset was found to cause model collapse (ICBHI stuck at 0.50) during multitask training. Too many near-identical copies of 2,891 originals caused overfitting. Final models trained on original 2,891 samples.
+
+### 4. Model Training
+
+#### Baseline CNN
+- 4 Conv2D blocks (32→64→128→256 filters), BatchNorm, MaxPooling
+- GlobalAveragePooling → Dense(256) → Dense(128) → Dense(4, softmax)
+- Single output: sound classification only
+- Loss: categorical crossentropy + class weights
+- LR: cosine decay 1e-3 → 1e-6
+
+#### Multitask CNN (Final Model)
+- Same 4-block CNN backbone (shared)
+- Two output heads branching from shared Dense(256):
+  - **Sound head**: Dense(128) → Dense(4, softmax)
+  - **Diagnosis head**: Dense(128) → Dense(7, softmax)
+- Loss: focal loss (γ=4.0 + class weights for sound, γ=2.0 for diagnosis)
+- Loss weights: sound=1.0, diagnosis=0.1
+- Early stopping on val_icbhi (patience=20)
+
+#### Why Multitask
+The shared backbone learns features useful for both tasks simultaneously. A feature useful for detecting COPD (which causes crackles) also helps the sound head detect crackles. This acts as regularisation — critical with only 2,891 training samples.
+
+#### Why Focal Loss (not crossentropy)
+Focal loss = `-(1 - p_t)^γ × log(p_t)`. The `(1-p_t)^γ` factor down-weights easy examples (Normal, which the model predicts correctly with high confidence) and focuses training on hard, rare examples (Wheeze, Both). Combined with class weights for additional imbalance correction.
+
+#### Why ResNet was abandoned
+A ResNet multitask model (with skip connections, mixup augmentation, label smoothing) was tested (`train_resnet.py`) but ICBHI collapsed to 0.50. Skip connections and mixup added too much complexity for a 2,891-sample dataset. The simpler baseline CNN architecture generalises better at this data scale.
+
+### 5. Evaluation
+- **ICBHI Score** = (mean Sensitivity + mean Specificity) / 2, averaged across all 4 sound classes
+- Per-class precision, recall, F1
+- Confusion matrix
+- Training curves (accuracy, loss, ICBHI per epoch)
+
+### 6. Export
+TFLite int8 quantization for deployment on mobile/IoT devices.
 
 ## Results
 
-| Model | ICBHI Score |
-|-------|-------------|
-| Baseline CNN (no augmentation) | 58.61% |
-| Multitask CNN (5k samples) | 57.68% |
-| Multitask CNN (21k augmented) | In progress |
+| Model | ICBHI Score | Notes |
+|-------|-------------|-------|
+| Baseline CNN | 59.80% | Sound only, original 2,891 samples |
+| ResNet Multitask | ~50% | Collapsed — abandoned |
+| **Multitask CNN** | **62.26%** | Sound + diagnosis, original 2,891 samples |
 
-> **Metric:** ICBHI Score = (Sensitivity + Specificity) / 2, averaged across all classes.
-> Accuracy alone is misleading due to class imbalance (68% of samples are Normal).
+> **+2.46% improvement** over baseline. Multitask model additionally predicts patient diagnosis with no extra inference cost.
+
+> **Metric:** ICBHI Score = (Sensitivity + Specificity) / 2, averaged across all classes. Accuracy is misleading due to class imbalance (57% Normal). A model predicting Normal for everything gets 57% accuracy but ICBHI of 50%.
+
+> **State of the art** on ICBHI 2017 is ~65–72%, achieved with pretrained audio transformers (PANNs, AST) trained on millions of clips. Our CNN from scratch on 2,891 samples achieving 62.26% is competitive.
 
 ## Setup
 
@@ -92,20 +162,37 @@ resp-detection/
 pip install tensorflow librosa soundfile scikit-learn pandas numpy matplotlib seaborn
 ```
 
-### Run locally
+### Train baseline CNN
+```bash
+python train_baseline.py
+```
+
+### Train multitask CNN (final model)
+```bash
+python train_final.py
+```
+
+### Run via CLI
 ```bash
 python main.py --phase train --config configs/experiment_config.json
 ```
 
 ### Run on Google Colab
-Mount Drive with preprocessed data, then use the self-contained training cells (see Colab notebook).
+Mount Drive with preprocessed data, then run `train_final.py` contents in a Colab cell for GPU acceleration (~3x faster than CPU).
 
 ## Key Design Decisions
 
-- **Patient-level splits** — prevents data leakage (same patient's recordings stay in one split)
-- **Focal loss** — handles class imbalance without needing class weights
-- **Multitask learning** — joint sound + diagnosis prediction forces richer feature learning
-- **Augmentation on train only** — val/test sets are never augmented
+| Decision | Reason |
+|----------|--------|
+| Patient-level splits | Prevents data leakage — same patient's recordings stay in one split |
+| Butterworth filter | Maximally flat response, no ripple distortion of lung sounds |
+| Mel spectrogram | Logarithmic frequency scale matches human auditory perception |
+| GlobalAveragePooling | Reduces overfitting vs Flatten — fewer parameters |
+| Focal loss + class weights | Dual mechanism for class imbalance — sample-level and class-level correction |
+| Multitask learning | Shared backbone regularised by two objectives simultaneously |
+| diagnosis weight=0.1 | Sound is primary task — diagnosis acts as regulariser, not co-equal objective |
+| Original data (not augmented) | 21k augmented data caused overfitting collapse; 2,891 originals give real diversity |
+| val_icbhi early stopping | Accuracy is misleading metric; ICBHI directly measures per-class balance |
 
 ## Team
 
