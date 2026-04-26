@@ -1,0 +1,109 @@
+.upload-zone {
+  border: 1.5px dashed var(--border-hi);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  padding: 40px 24px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+}
+
+.upload-zone:hover:not(.busy) {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.upload-zone.dragging {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.upload-zone.busy { cursor: default; pointer-events: none; }
+
+.upload-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.upload-icon { opacity: 0.8; }
+
+.upload-primary {
+  font-size: 15px;
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+.upload-primary span { color: var(--accent); }
+
+.upload-secondary { font-size: 12px; color: var(--text-3); }
+
+/* ── Busy state ────────────────────────────────────────────────────────── */
+.upload-busy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.upload-busy-text { font-size: 13px; color: var(--text-2); }
+
+@keyframes pulse {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  50%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1);   opacity: 0; }
+}
+
+.pulse-ring {
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  animation: pulse 1.4s ease-out infinite;
+}
+
+.upload-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  border: 1.5px solid var(--border-hi);
+  transition: all 0.3s;
+}
+
+.step.done .step-dot { background: var(--green); border-color: var(--green); }
+.step.done span { color: var(--green); }
+.step.active .step-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+.step.active span { color: var(--accent); }
+
+.step-line {
+  width: 32px;
+  height: 1px;
+  background: var(--border);
+  margin-bottom: 18px;
+}

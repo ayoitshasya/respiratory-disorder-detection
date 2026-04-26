@@ -1,0 +1,100 @@
+.sp-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sp-header { display: flex; flex-direction: column; gap: 4px; }
+
+.sp-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.sp-desc { font-size: 12px; color: var(--text-3); }
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.sp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sp-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.sp-tab:hover { border-color: var(--border-hi); color: var(--text-2); }
+
+.sp-tab.active {
+  border-color: var(--tab-color, var(--accent));
+  color: var(--tab-color, var(--accent));
+  background: color-mix(in srgb, var(--tab-color, var(--accent)) 10%, transparent);
+}
+
+.sp-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Image ────────────────────────────────────────────────────────────── */
+.sp-image-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0d1117;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sp-image {
+  width: 100%;
+  display: block;
+  border-radius: 8px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.sp-placeholder {
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 40px;
+}
+
+/* ── Legend chips ─────────────────────────────────────────────────────── */
+.sp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sp-chip {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  background: var(--bg-raised);
+}

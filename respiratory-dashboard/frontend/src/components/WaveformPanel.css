@@ -1,0 +1,106 @@
+.wp-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wp-header { display: flex; flex-direction: column; gap: 4px; }
+
+.wp-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.wp-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  transition: color 0.2s;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.wp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wp-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.wp-tab:hover { border-color: var(--border-hi); color: var(--text-2); }
+
+.wp-tab.active {
+  border-color: var(--tab-color, var(--accent));
+  color: var(--tab-color, var(--accent));
+  background: color-mix(in srgb, var(--tab-color, var(--accent)) 10%, transparent);
+}
+
+.wp-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Canvas ───────────────────────────────────────────────────────────── */
+.wp-canvas-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0a0d13;
+}
+
+.wp-canvas {
+  width: 100%;
+  height: 180px;
+  display: block;
+}
+
+/* ── Stats strip ──────────────────────────────────────────────────────── */
+.wp-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wp-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-raised);
+  border-radius: 6px;
+  padding: 6px 12px;
+  flex: 1 1 100px;
+}
+
+.wp-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+}
+
+.wp-stat-val {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--stat-color, var(--text-1));
+  font-variant-numeric: tabular-nums;
+}

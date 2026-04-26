@@ -1,0 +1,108 @@
+/* ── Tokens ─────────────────────────────────────────────────────────────── */
+:root {
+  --bg-base:    #0a0d13;
+  --bg-surface: #111722;
+  --bg-card:    #161d2b;
+  --bg-raised:  #1c2537;
+  --border:     #222d42;
+  --border-hi:  #2e3f5c;
+  --accent:     #3b82f6;
+  --accent-dim: #1d4ed8;
+  --accent-glow:#1e3a6e;
+  --teal:       #14b8a6;
+  --green:      #22c55e;
+  --amber:      #f59e0b;
+  --red:        #ef4444;
+  --text-1:     #e2e8f0;
+  --text-2:     #8fa3bf;
+  --text-3:     #4d6080;
+  --radius:     10px;
+  --radius-lg:  16px;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg-base);
+  color: var(--text-1);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.app { max-width: 1280px; margin: 0 auto; padding: 0 24px 60px; }
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 0 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+}
+
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo-mark { display: flex; align-items: center; }
+
+.app-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-1);
+}
+
+.app-subtitle { font-size: 12px; color: var(--text-3); letter-spacing: 0.03em; }
+
+.app-main { display: flex; flex-direction: column; gap: 28px; }
+
+.upload-section { display: flex; flex-direction: column; gap: 12px; }
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 800px) { .viz-grid { grid-template-columns: 1fr; } }
+
+.viz-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.viz-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+/* ── Error / idle states ─────────────────────────────────────────────────── */
+.error-banner {
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  color: #fca5a5;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.idle-hint {
+  text-align: center;
+  color: var(--text-3);
+  font-size: 14px;
+  padding: 60px 0;
+}
+
+.idle-hint strong { color: var(--text-2); }
