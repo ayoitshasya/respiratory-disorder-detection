@@ -22,8 +22,10 @@ HIGH_CUT     = 2000
 FILTER_ORDER = 4
 
 # Mel spectrogram
+# hop_length=256 (was 512) — doubles temporal resolution so crackle bursts
+# (5–100ms) span 3+ frames instead of 1, giving the model more signal to learn from
 N_FFT      = 2048
-HOP_LENGTH = 512
+HOP_LENGTH = 256
 N_MELS     = 128
 FMIN       = 50
 FMAX       = 2000
@@ -197,7 +199,7 @@ def cache_features(manifest, feature_type='mel', overwrite=False):
     return manifest
 
 
-TARGET_FRAMES = 63  # all features padded/truncated to this time length
+TARGET_FRAMES = 126  # 2s clip at hop_length=256: 1+floor(32000/256)=126 frames
 
 
 def pad_or_truncate(feat, target_frames=TARGET_FRAMES):
