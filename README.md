@@ -55,16 +55,20 @@ Secondary task: predict patient diagnosis (COPD, Pneumonia, URTI, etc.) from the
 ```
 resp-detection/
 ├── train_baseline.py           # Baseline CNN — sound classification only
-├── train_final.py              # Multitask CNN — sound + diagnosis heads (final model)
-├── train_resnet.py             # ResNet multitask (experimental, abandoned)
-├── augment_minority.py         # Audio augmentation for minority classes
-├── main.py                     # CLI entrypoint
+├── multitask_model.py          # Multitask CNN — sound + diagnosis heads (proven baseline)
+├── train_with_synthetic.py     # Multitask CNN + synthetic data (experimental)
+├── train_highres.py            # Multitask CNN + hop_length=256 + modest aug (current best attempt)
+├── generate_synthetic.py       # Generate synthetic crackle/wheeze/both samples
+├── augment_minority.py         # Original heavy augmentation (abandoned — caused collapse)
+├── augment_modest.py           # Modest real-data augmentation (2–5x minority classes)
+├── reextract_features.py       # Re-extract features after hop_length change
 ├── configs/
 │   └── experiment_config.json  # Hyperparameters
 ├── src/
 │   ├── data_loader.py          # Patient-level train/val/test splits
-│   ├── preprocessing.py        # Butterworth filter, mel-spectrogram
+│   ├── preprocessing.py        # Butterworth filter, mel-spectrogram (hop_length=256)
 │   ├── augmentation.py         # Audio augmentation + SpecAugment
+│   ├── synthetic_generator.py  # Mathematical synthesis of wheeze/crackle/both
 │   ├── models.py               # CNN architectures
 │   ├── multitask_model.py      # Shared backbone + sound + diagnosis heads
 │   ├── training.py             # Focal loss, cosine LR, ICBHI score tracking
@@ -74,12 +78,14 @@ resp-detection/
     ├── checkpoints/            # Saved .keras model files
     ├── results/                # Training curves, confusion matrices (PNG)
     └── processed/
-        ├── manifest.csv        # Original splits (5,319 samples)
-        ├── manifest_aug.csv    # Augmented splits (~21k samples)
-        ├── train/              # Mel spectrogram .npy files (train)
-        ├── val/                # Mel spectrogram .npy files (val)
-        ├── test/               # Mel spectrogram .npy files (test)
-        └── train_aug_v2/       # Augmented .npy files (~18k extra)
+        ├── manifest.csv              # Original splits (5,319 samples)
+        ├── manifest_aug_modest.csv   # Modest augmented splits (6,415 train samples)
+        ├── manifest_synthetic.csv    # Synthetic samples manifest
+        ├── train/                    # Mel spectrogram .npy (hop_length=256)
+        ├── val/                      # Mel spectrogram .npy files (val)
+        ├── test/                     # Mel spectrogram .npy files (test)
+        ├── train_aug_modest/         # Modest augmented .npy files
+        └── train_synthetic/          # Synthetic .npy files
 ```
 
 ## Pipeline
@@ -89,22 +95,33 @@ Recordings from the same patient stay in one split only. Prevents data leakage �
 
 ### 2. Preprocessing
 - **Butterworth bandpass filter** (4th order, 100–2000 Hz) — removes heart noise (<100 Hz) and equipment noise (>2000 Hz). Butterworth chosen for maximally flat frequency response (no ripple distortion).
-- **Mel spectrogram** (128 mel bins, n_fft=2048, hop_length=512) — converts audio to a 2D frequency×time image. Mel scale mimics human hearing (logarithmic), better suited to medical audio than linear spectrograms.
-- **Fixed shape** — all clips padded or truncated to 63 time frames → final shape (128, 63, 1).
+- **Mel spectrogram** (128 mel bins, n_fft=2048, hop_length=256) — converts audio to a 2D frequency×time image. Mel scale mimics human hearing (logarithmic), better suited to medical audio than linear spectrograms.
+- **Fixed shape** — all clips padded or truncated to 126 time frames → final shape (128, 126, 1).
+
+> **hop_length change (512→256):** Crackle sounds are short explosive bursts (5–100ms). At hop_length=512 a 50ms crackle spans only 1–2 spectrogram frames. At hop_length=256 it spans 3+ frames, giving the CNN more signal to learn from. This doubles temporal resolution at no architectural cost since GlobalAveragePooling handles variable input sizes.
 
 ### 3. Data Augmentation (minority classes only)
 Applied to training set only. Val/test never augmented.
 
 | Technique | Effect | Why |
 |-----------|--------|-----|
-| Time stretch (0.80–1.20x) | Slows/speeds audio | Duration variation is irrelevant to class |
-| Pitch shift (±1–3 semitones) | Shifts frequency | Patient chest size varies pitch slightly |
-| Gaussian noise (std=0.003–0.005) | Adds microphone noise | Simulates real hospital recording variation |
-| Stretch + noise combined | Both above | Extra diversity for most augmented copies |
+| Time stretch (0.80–0.92x, 1.08–1.20x) | Slows/speeds audio | Duration variation is irrelevant to class |
+| Pitch shift (±1.5–3.0 semitones) | Shifts frequency | Patient chest size varies pitch slightly |
+| Gaussian noise (SNR 18–28 dB) | Adds microphone noise | Simulates real hospital recording variation |
+| Stretch + noise combined | Both above | Extra diversity |
 
-Copies per class: Normal×3, Crackle×8, Wheeze×11, Both×20 → ~21k augmented samples.
+**Modest copies:** Crackle×2, Wheeze×3, Both×5, Normal unchanged → 6,415 total training samples.
 
-> **Note:** The 21k augmented dataset was found to cause model collapse (ICBHI stuck at 0.50) during multitask training. Too many near-identical copies of 2,891 originals caused overfitting. Final models trained on original 2,891 samples.
+| Class | Original | After Aug |
+|-------|----------|-----------|
+| Normal | 1,643 | 1,643 |
+| Crackle | 626 | 1,878 |
+| Wheeze | 419 | 1,676 |
+| Both | 203 | 1,218 |
+
+> **Previous augmentation attempts and what failed:**
+> - *21k heavy augmentation* (Normal×3, Crackle×8, Wheeze×11, Both×20): ICBHI collapsed to 0.50. Too many near-identical copies caused the model to memorise augmentation transforms rather than learn acoustic features.
+> - *Mathematical synthesis* (`src/synthetic_generator.py`): Generated wheeze (vibrato sinusoids), crackle (bandpassed noise bursts), and both (layered) sounds mixed into real normal breathing recordings. 1,500 samples at alpha 0.25–0.70 caused Normal recall to collapse from 97%→51% (model over-detected pathology). 700 samples at lower alpha (0.10–0.28) caused training instability. Root cause: synthetic acoustic patterns don't match real recordings closely enough — model learns synthetic-specific features that don't transfer.
 
 ### 4. Model Training
 
@@ -144,13 +161,16 @@ TFLite int8 quantization for deployment on mobile/IoT devices.
 
 ## Results
 
-| Model | ICBHI Score | Notes |
-|-------|-------------|-------|
-| Baseline CNN | 59.80% | Sound only, original 2,891 samples |
-| ResNet Multitask | ~50% | Collapsed — abandoned |
-| **Multitask CNN** | **62.26%** | Sound + diagnosis, original 2,891 samples |
+| Model | ICBHI | Crackle Recall | Normal Recall | Notes |
+|-------|-------|---------------|---------------|-------|
+| Baseline CNN | 59.80% | — | — | Sound only, 2,891 samples |
+| ResNet Multitask | ~50% | — | — | Collapsed — abandoned |
+| **Multitask CNN** | **62.26%** | 21% | 97% | Sound + diagnosis, 2,891 samples |
+| Multitask + Synth v1 | 61.05% | 48% | 51% | 1,500 synthetic samples — Normal collapsed |
+| Multitask + Synth v2 | 56.28% | — | — | Asymmetric focal loss — unstable |
+| **Highres CNN** (current) | *training* | — | — | hop_length=256, 6,415 real+aug samples |
 
-> **+2.46% improvement** over baseline. Multitask model additionally predicts patient diagnosis with no extra inference cost.
+> **Current target:** 70% ICBHI with improved Crackle recall (was 21%).
 
 > **Metric:** ICBHI Score = (Sensitivity + Specificity) / 2, averaged across all classes. Accuracy is misleading due to class imbalance (57% Normal). A model predicting Normal for everything gets 57% accuracy but ICBHI of 50%.
 
@@ -167,18 +187,31 @@ pip install tensorflow librosa soundfile scikit-learn pandas numpy matplotlib se
 python train_baseline.py
 ```
 
-### Train multitask CNN (final model)
+### Train multitask CNN (proven baseline — 62.26% ICBHI)
 ```bash
-python train_final.py
+python multitask_model.py
 ```
 
-### Run via CLI
+### Train high-resolution model (current best attempt)
 ```bash
-python main.py --phase train --config configs/experiment_config.json
+# Step 1: Re-extract features with hop_length=256
+python reextract_features.py
+
+# Step 2: Generate modest augmentation (2-5x minority classes)
+python augment_modest.py
+
+# Step 3: Train
+python train_highres.py
+```
+
+### Generate synthetic data (experimental)
+```bash
+python generate_synthetic.py       # generates 700 synthetic samples
+python train_with_synthetic.py     # trains with synthetic + real data
 ```
 
 ### Run on Google Colab
-Mount Drive with preprocessed data, then run `train_final.py` contents in a Colab cell for GPU acceleration (~3x faster than CPU).
+Mount Drive with preprocessed data, then run training scripts in a Colab cell for GPU acceleration (~3x faster than CPU).
 
 ## Key Design Decisions
 
@@ -191,8 +224,10 @@ Mount Drive with preprocessed data, then run `train_final.py` contents in a Cola
 | Focal loss + class weights | Dual mechanism for class imbalance — sample-level and class-level correction |
 | Multitask learning | Shared backbone regularised by two objectives simultaneously |
 | diagnosis weight=0.1 | Sound is primary task — diagnosis acts as regulariser, not co-equal objective |
-| Original data (not augmented) | 21k augmented data caused overfitting collapse; 2,891 originals give real diversity |
+| Modest augmentation (2–5x) | 21k augmented data caused collapse; 2–5x provides diversity without duplication |
 | val_icbhi early stopping | Accuracy is misleading metric; ICBHI directly measures per-class balance |
+| hop_length=256 | Doubles temporal resolution — crackle bursts span 3+ frames instead of 1 |
+| Real augmentation over synthetic | Mathematical synthesis creates out-of-distribution features that don't transfer to real audio |
 
 ## Team
 
