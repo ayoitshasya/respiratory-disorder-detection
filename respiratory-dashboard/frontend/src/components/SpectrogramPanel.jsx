@@ -14,12 +14,6 @@ const TABS = [
     color: "#3b82f6",
     desc: "13 Mel-frequency cepstral coefficients · coolwarm colormap",
   },
-  {
-    key: "chroma",
-    label: "Chroma",
-    color: "#22c55e",
-    desc: "12 pitch-class energy distribution · harmonic content",
-  },
 ];
 
 export default function SpectrogramPanel({ spectrograms }) {
@@ -62,7 +56,6 @@ export default function SpectrogramPanel({ spectrograms }) {
       <div className="sp-legend">
         {active === "mel"   && <MelLegend />}
         {active === "mfcc"  && <MfccLegend />}
-        {active === "chroma"&& <ChromaLegend />}
       </div>
     </div>
   );
@@ -93,12 +86,3 @@ function MfccLegend() {
   );
 }
 
-function ChromaLegend() {
-  return (
-    <>
-      {['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'].map(p => (
-        <Chip key={p} label={p} />
-      ))}
-    </>
-  );
-}

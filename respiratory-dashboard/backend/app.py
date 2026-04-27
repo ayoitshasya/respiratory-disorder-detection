@@ -19,21 +19,131 @@ ALLOWED_EXTENSIONS = {"wav"}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# ── Set to True once your model is ready and run_model() is implemented ───────
-MODEL_READY = False
+# ── Model config — must match training hyperparameters exactly ────────────────
+MODEL_PATH   = "multitask_best.keras"   # ← put your .keras file path here
+TARGET_FRAMES = 63
+N_MELS        = 128
+SR_MODEL      = 22050   # sample rate used during training
 
-# ── Update these to match your model's output label order ─────────────────────
-DISEASE_CLASSES = [
-    "Healthy",
-    "COPD",
-    "Pneumonia",
-    "Bronchitis",
-    "Asthma",
-    "Pulmonary Fibrosis",
-]
+SOUND_CLASSES     = ["Normal", "Crackle", "Wheeze", "Both"]
+DIAGNOSIS_CLASSES = ["Healthy", "COPD", "URTI", "Bronchiectasis",
+                     "Pneumonia", "Bronchiolitis", "Other"]
+
+# ── Load model once at startup ────────────────────────────────────────────────
+_model = None
+
+def build_model():
+    """Rebuild the exact same architecture from training."""
+    import tensorflow as tf
+    NUM_SOUND = 4; NUM_DIAGNOSIS = 7
+
+    inp = tf.keras.Input(shape=(N_MELS, TARGET_FRAMES, 1))
+    x = tf.keras.layers.Conv2D(32, 3, padding='same', activation='relu')(inp)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.MaxPooling2D(2)(x)
+    x = tf.keras.layers.Conv2D(64, 3, padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.MaxPooling2D(2)(x)
+    x = tf.keras.layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.MaxPooling2D(2)(x)
+    x = tf.keras.layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    shared = tf.keras.layers.Dense(256, activation='relu')(x)
+    shared = tf.keras.layers.Dropout(0.5)(shared)
+
+    s = tf.keras.layers.Dense(128, activation='relu')(shared)
+    s = tf.keras.layers.Dropout(0.3)(s)
+    sound_out = tf.keras.layers.Dense(NUM_SOUND, activation='softmax', name='sound')(s)
+
+    d = tf.keras.layers.Dense(128, activation='relu')(shared)
+    d = tf.keras.layers.Dropout(0.3)(d)
+    diag_out = tf.keras.layers.Dense(NUM_DIAGNOSIS, activation='softmax', name='diagnosis')(d)
+
+    return tf.keras.Model(inp, [sound_out, diag_out])
+
+
+def get_model():
+    global _model
+    if _model is None:
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(
+                f"Model file not found at '{MODEL_PATH}'. "
+                "Place multitask_final_best.keras in the same directory as app.py."
+            )
+        _model = build_model()
+        _model.load_weights(MODEL_PATH)   # ← skip config, load weights only
+        print(f"[INFO] Model weights loaded from {MODEL_PATH}")
+    return _model
+
+MODEL_READY = os.path.exists(MODEL_PATH)   # auto-detected; no manual toggle needed
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Preprocessing — mirrors the training pipeline exactly
+# ─────────────────────────────────────────────────────────────────────────────
+
+def pad_or_truncate(feat, t=TARGET_FRAMES):
+    """Pad / truncate the time axis to exactly TARGET_FRAMES columns."""
+    c = feat.shape[-1]          # feat shape: (N_MELS, time)
+    if c < t:
+        feat = np.pad(feat, [(0, 0), (0, t - c)])
+    else:
+        feat = feat[..., :t]
+    return feat
+
+
+def preprocess_for_model(y, sr):
+    """
+    Replicate the feature extraction used in the training manifest.
+    Adjust this if your training used a different mel pipeline.
+    """
+    # Resample if needed
+    if sr != SR_MODEL:
+        y = librosa.resample(y, orig_sr=sr, target_sr=SR_MODEL)
+        sr = SR_MODEL
+
+    mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=N_MELS, fmax=8000)
+    mel_db = librosa.power_to_db(mel, ref=np.max)
+
+    feat = pad_or_truncate(mel_db, TARGET_FRAMES)   # (128, 63)
+    feat = feat[..., np.newaxis]                     # (128, 63, 1)
+    feat = np.expand_dims(feat, 0).astype(np.float32)  # (1, 128, 63, 1)
+    return feat
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Model inference
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_model(y, sr):
+    """
+    Returns a dict:
+        sound     → sorted list of {label, probability}
+        diagnosis → sorted list of {label, probability}
+    """
+    model = get_model()
+    inp = preprocess_for_model(y, sr)
+
+    sound_probs, diag_probs = model.predict(inp, verbose=0)
+    sound_probs = sound_probs[0].tolist()
+    diag_probs  = diag_probs[0].tolist()
+
+    sound_preds = sorted(
+        [{"label": cls, "probability": round(float(p), 4)}
+         for cls, p in zip(SOUND_CLASSES, sound_probs)],
+        key=lambda x: x["probability"], reverse=True,
+    )
+    diag_preds = sorted(
+        [{"label": cls, "probability": round(float(p), 4)}
+         for cls, p in zip(DIAGNOSIS_CLASSES, diag_probs)],
+        key=lambda x: x["probability"], reverse=True,
+    )
+    return {"sound": sound_preds, "diagnosis": diag_preds}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Audio helpers (unchanged from original)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def allowed_file(filename):
@@ -41,53 +151,36 @@ def allowed_file(filename):
 
 
 def load_audio(filepath, sr=22050):
-    """Load full audio at target sample rate (no fixed duration cap)."""
     y, sr = librosa.load(filepath, sr=sr)
     return y, sr
 
 
 def downsample(arr, n=1000):
-    """Downsample 1-D array to n points for lightweight transfer."""
     idx = np.linspace(0, len(arr) - 1, n, dtype=int)
     return arr[idx].tolist(), idx.tolist()
 
 
-# ── Waveform representations ──────────────────────────────────────────────────
-
 def compute_raw_waveform(y, sr, n=1200):
     idx = np.linspace(0, len(y) - 1, n, dtype=int)
-    return {
-        "times": (idx / sr).tolist(),
-        "amplitudes": y[idx].tolist(),
-    }
+    return {"times": (idx / sr).tolist(), "amplitudes": y[idx].tolist()}
 
 
 def compute_rms_envelope(y, sr, frame_length=2048, hop_length=512):
-    """RMS energy envelope — shows breathing rhythm / loudness curve."""
     rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
     frames = np.arange(len(rms))
     times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
-    return {
-        "times": times.tolist(),
-        "values": rms.tolist(),
-    }
+    return {"times": times.tolist(), "values": rms.tolist()}
 
 
 def compute_spectral_centroid(y, sr, hop_length=512):
-    """Spectral centroid over time — brightness / wheeze indicator."""
     sc = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop_length)[0]
     frames = np.arange(len(sc))
     times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
     sc_norm = (sc - sc.min()) / (sc.max() - sc.min() + 1e-8)
-    return {
-        "times": times.tolist(),
-        "values": sc_norm.tolist(),
-        "values_hz": sc.tolist(),
-    }
+    return {"times": times.tolist(), "values": sc_norm.tolist(), "values_hz": sc.tolist()}
 
 
 def compute_mfcc_mean(y, sr, n_mfcc=13):
-    """Mean MFCC coefficients — compact spectral shape fingerprint."""
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
     return {
         "coefficients": list(range(1, n_mfcc + 1)),
@@ -97,22 +190,16 @@ def compute_mfcc_mean(y, sr, n_mfcc=13):
 
 
 def compute_mfcc_over_time(y, sr, n_mfcc=13, hop_length=512):
-    """Full MFCC matrix over time (downsampled) for heatmap display."""
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc, hop_length=hop_length)
     frames = np.arange(mfcc.shape[1])
     times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
     step = max(1, mfcc.shape[1] // 200)
     mfcc_small = mfcc[:, ::step]
     mfcc_norm = (mfcc_small - mfcc_small.min()) / (mfcc_small.max() - mfcc_small.min() + 1e-8)
-    return {
-        "times": times[::step].tolist(),
-        "matrix": mfcc_norm.tolist(),
-        "n_mfcc": n_mfcc,
-    }
+    return {"times": times[::step].tolist(), "matrix": mfcc_norm.tolist(), "n_mfcc": n_mfcc}
 
 
 def compute_chroma(y, sr, hop_length=512):
-    """Chroma features — harmonic content / pitch class distribution."""
     chroma = librosa.feature.chroma_stft(y=y, sr=sr, hop_length=hop_length)
     frames = np.arange(chroma.shape[1])
     times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
@@ -125,17 +212,11 @@ def compute_chroma(y, sr, hop_length=512):
 
 
 def compute_zcr(y, sr, hop_length=512):
-    """Zero-crossing rate — useful for detecting crackles/fricatives."""
     zcr = librosa.feature.zero_crossing_rate(y, hop_length=hop_length)[0]
     frames = np.arange(len(zcr))
     times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
-    return {
-        "times": times.tolist(),
-        "values": zcr.tolist(),
-    }
+    return {"times": times.tolist(), "values": zcr.tolist()}
 
-
-# ── Spectrogram images ────────────────────────────────────────────────────────
 
 def _fig_to_b64(fig):
     buf = io.BytesIO()
@@ -158,7 +239,6 @@ def make_axes(figsize=(10, 3.5)):
     return fig, ax
 
 
-# REPLACE the entire compute_mel_spectrogram_image function with:
 def compute_mel_spectrogram_image(y, sr):
     fig, ax = make_axes()
     mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, fmax=8000)
@@ -171,13 +251,11 @@ def compute_mel_spectrogram_image(y, sr):
         plt.setp(cb.ax.yaxis.get_ticklabels(), color="#8fa3bf")
     except Exception:
         pass
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Frequency (Hz)")
+    ax.set_xlabel("Time (s)"); ax.set_ylabel("Frequency (Hz)")
     plt.tight_layout()
     return _fig_to_b64(fig)
 
 
-# REPLACE the entire compute_mfcc_image function with:
 def compute_mfcc_image(y, sr):
     fig, ax = make_axes()
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
@@ -187,12 +265,11 @@ def compute_mfcc_image(y, sr):
         plt.setp(cb.ax.yaxis.get_ticklabels(), color="#8fa3bf")
     except Exception:
         pass
-    ax.set_ylabel("MFCC coefficient")
-    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("MFCC coefficient"); ax.set_xlabel("Time (s)")
     plt.tight_layout()
     return _fig_to_b64(fig)
 
-# REPLACE the entire compute_chroma_image function with:
+
 def compute_chroma_image(y, sr):
     fig, ax = make_axes()
     chroma = librosa.feature.chroma_stft(y=y, sr=sr)
@@ -203,16 +280,13 @@ def compute_chroma_image(y, sr):
         plt.setp(cb.ax.yaxis.get_ticklabels(), color="#8fa3bf")
     except Exception:
         pass
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Pitch class")
+    ax.set_xlabel("Time (s)"); ax.set_ylabel("Pitch class")
     plt.tight_layout()
     return _fig_to_b64(fig)
 
-# ── Audio metadata ────────────────────────────────────────────────────────────
 
-# REPLACE the entire audio_metadata function with:
 def audio_metadata(y, sr, filepath):
-    duration = float(len(y)) / sr          # avoids librosa.get_duration() version issues
+    duration = float(len(y)) / sr
     rms = float(np.sqrt(np.mean(y ** 2)))
     zcr_mean = float(np.mean(librosa.feature.zero_crossing_rate(y)))
     sc = librosa.feature.spectral_centroid(y=y, sr=sr)
@@ -230,48 +304,14 @@ def audio_metadata(y, sr, filepath):
     }
 
 
-# ── Model inference ───────────────────────────────────────────────────────────
-
-def run_model(y, sr):
-    """
-    ══════════════════════════════════════════════════════════════════
-    REPLACE THIS with your trained model. Set MODEL_READY = True above.
-
-    PyTorch example:
-        import torch
-        _model = torch.load("model.pt", map_location="cpu"); _model.eval()
-        mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, fmax=8000)
-        mel_db = librosa.power_to_db(mel, ref=np.max)
-        t = torch.FloatTensor(mel_db).unsqueeze(0).unsqueeze(0)  # (1,1,128,T)
-        with torch.no_grad():
-            probs = torch.softmax(_model(t), dim=1).squeeze().numpy()
-        return probs.tolist()
-
-    Keras example:
-        import tensorflow as tf
-        _model = tf.keras.models.load_model("model.h5")
-        mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, fmax=8000)
-        mel_db = librosa.power_to_db(mel, ref=np.max)
-        inp = np.expand_dims(np.expand_dims(mel_db, 0), -1)  # (1,128,T,1)
-        return _model.predict(inp, verbose=0)[0].tolist()
-    ══════════════════════════════════════════════════════════════════
-    """
-    raise NotImplementedError("Model not yet connected — set MODEL_READY = True after implementing run_model()")
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.route("/api/visualize", methods=["POST"])
 def visualize():
-    """
-    Always-available endpoint: returns all waveforms + spectrograms.
-    Works regardless of MODEL_READY.
-    """
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
-
     file = request.files["file"]
     if not file or not allowed_file(file.filename):
         return jsonify({"error": "Invalid file — only .wav files accepted"}), 400
@@ -282,7 +322,6 @@ def visualize():
 
     try:
         y, sr = load_audio(filepath)
-
         return jsonify({
             "success": True,
             "metadata": audio_metadata(y, sr, filepath),
@@ -301,13 +340,10 @@ def visualize():
                 "chroma": compute_chroma_image(y, sr),
             },
         })
-
-    # AFTER
     except Exception as e:
         import traceback
-        traceback.print_exc()          # prints full stack trace to your terminal
+        traceback.print_exc()
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
-
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
@@ -316,19 +352,23 @@ def visualize():
 @app.route("/api/predict", methods=["POST"])
 def predict():
     """
-    Prediction endpoint — returns model_pending when MODEL_READY is False.
-    Frontend polls / calls this separately so visualizations never block on it.
+    Returns dual-head predictions:
+      - sound      → 4 classes (Normal / Crackle / Wheeze / Both)
+      - diagnosis  → 7 classes (Healthy / COPD / URTI / Bronchiectasis /
+                                Pneumonia / Bronchiolitis / Other)
     """
     if not MODEL_READY:
         return jsonify({
             "success": True,
             "model_pending": True,
-            "message": "Model is still in training. Visualizations are fully available.",
+            "message": (
+                f"Model file '{MODEL_PATH}' not found. "
+                "Place the .keras file in the same directory as app.py."
+            ),
         })
 
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
-
     file = request.files["file"]
     if not file or not allowed_file(file.filename):
         return jsonify({"error": "Invalid file — only .wav files accepted"}), 400
@@ -339,22 +379,26 @@ def predict():
 
     try:
         y, sr = load_audio(filepath)
-        probabilities = run_model(y, sr)
-        predictions = sorted(
-            [{"disease": cls, "probability": round(float(p), 4)}
-             for cls, p in zip(DISEASE_CLASSES, probabilities)],
-            key=lambda x: x["probability"], reverse=True,
-        )
+        results = run_model(y, sr)
+
+        sound = results["sound"]
+        diag  = results["diagnosis"]
+
         return jsonify({
             "success": True,
             "model_pending": False,
-            "predictions": predictions,
-            "top_prediction": predictions[0],
+            # Keys PredictionPanel.jsx reads
+            "top_prediction": {"disease": sound[0]["label"], "probability": sound[0]["probability"]},
+            "predictions":    [{"disease": p["label"], "probability": p["probability"]} for p in sound],
+            # Diagnosis (bonus — available for future frontend use)
+            "top_diagnosis":         {"disease": diag[0]["label"], "probability": diag[0]["probability"]},
+            "diagnosis_predictions": [{"disease": p["label"], "probability": p["probability"]} for p in diag],
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
@@ -365,9 +409,17 @@ def health():
     return jsonify({
         "status": "ok",
         "model_ready": MODEL_READY,
-        "disease_classes": DISEASE_CLASSES,
+        "model_path": MODEL_PATH,
+        "sound_classes": SOUND_CLASSES,
+        "diagnosis_classes": DIAGNOSIS_CLASSES,
     })
 
 
 if __name__ == "__main__":
+    # Eagerly load the model on startup so the first request isn't slow
+    if MODEL_READY:
+        try:
+            get_model()
+        except Exception as e:
+            print(f"[WARN] Could not pre-load model: {e}")
     app.run(debug=True, port=5000, host="0.0.0.0", use_reloader=False)
