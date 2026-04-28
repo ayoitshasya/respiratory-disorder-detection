@@ -9,6 +9,8 @@ results/
 *.keras
 *.tflite
 *.h5
+*.pt
+*.pth
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
