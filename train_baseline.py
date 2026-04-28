@@ -1,3 +1,24 @@
+"""
+train_baseline.py
+-----------------
+Baseline single-task CNN for respiratory sound classification.
+
+Trains a 4-block CNN (32→64→128→256 filters) on mel-spectrogram features
+from the ICBHI 2017 dataset to classify lung sounds into 4 categories:
+Normal, Crackle, Wheeze, Both.
+
+This is the starting point before multitask learning was introduced.
+Achieved 59.80% ICBHI score on the test set.
+
+Run:
+    python train_baseline.py
+
+Output:
+    data/checkpoints/baseline_best.keras
+    data/results/baseline_training_curves.png
+    data/results/baseline_confusion_matrix.png
+"""
+
 import os, random
 import numpy as np
 import pandas as pd

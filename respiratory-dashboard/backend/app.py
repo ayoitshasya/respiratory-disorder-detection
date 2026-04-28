@@ -1,3 +1,31 @@
+"""
+app.py
+------
+Flask backend for the PulmoScan respiratory sound analysis dashboard.
+
+Exposes three API endpoints consumed by the React frontend:
+  POST /api/predict   — Upload a .wav file, run the CNN model, return
+                        sound classification (Normal/Crackle/Wheeze/Both)
+                        and diagnosis prediction (COPD/Pneumonia/URTI/etc.)
+  POST /api/visualize — Upload a .wav file, return waveform data and
+                        spectrogram images for display in the dashboard
+  GET  /api/health    — Returns model load status and class labels
+
+Preprocessing pipeline mirrors src/preprocessing.py exactly:
+  resample to 16kHz → Butterworth bandpass (100-2000 Hz) →
+  mel spectrogram (hop_length=256, 128 mel bins) → normalise → pad to 126 frames
+
+Threshold weights [Normal=0.8, Crackle=0.5, Wheeze=2.0, Both=10.0] are applied
+to the softmax output before argmax to correct class imbalance at inference time.
+This post-hoc tuning improved ICBHI score from 58% to 62.01% without retraining.
+
+Run:
+    python app.py
+
+Requires:
+    data/checkpoints/highres_best.keras  (trained model weights)
+"""
+
 import os
 import io
 import base64
@@ -10,6 +38,7 @@ import matplotlib.pyplot as plt
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from scipy.signal import butter, filtfilt
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=False)
@@ -20,10 +49,26 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # ── Model config — must match training hyperparameters exactly ────────────────
-MODEL_PATH   = "multitask_best.keras"   # ← put your .keras file path here
-TARGET_FRAMES = 63
+_BASE_DIR     = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODEL_PATH    = os.path.join(_BASE_DIR, 'data', 'checkpoints', 'highres_best.keras')
+TARGET_FRAMES = 126
 N_MELS        = 128
-SR_MODEL      = 22050   # sample rate used during training
+SR_MODEL      = 16000   # sample rate used during training
+
+# Butterworth bandpass — removes heart noise (<100 Hz) and equipment noise (>2000 Hz)
+LOW_CUT      = 100
+HIGH_CUT     = 2000
+FILTER_ORDER = 4
+
+# Mel spectrogram params — must match src/preprocessing.py exactly
+N_FFT      = 2048
+HOP_LENGTH = 256
+FMIN       = 50
+FMAX       = 2000
+
+# Threshold weights — found via grid search post-training to correct class imbalance
+# [Normal=0.8, Crackle=0.5, Wheeze=2.0, Both=10.0] → ICBHI 62.01%
+THRESHOLD_WEIGHTS = np.array([0.8, 0.5, 2.0, 10.0], dtype=np.float32)
 
 SOUND_CLASSES     = ["Normal", "Crackle", "Wheeze", "Both"]
 DIAGNOSIS_CLASSES = ["Healthy", "COPD", "URTI", "Bronchiectasis",
@@ -93,22 +138,32 @@ def pad_or_truncate(feat, t=TARGET_FRAMES):
     return feat
 
 
+def butterworth_filter(audio, fs=SR_MODEL):
+    nyq  = 0.5 * fs
+    low  = LOW_CUT  / nyq
+    high = HIGH_CUT / nyq
+    b, a = butter(FILTER_ORDER, [low, high], btype='band')
+    return filtfilt(b, a, audio)
+
+
 def preprocess_for_model(y, sr):
-    """
-    Replicate the feature extraction used in the training manifest.
-    Adjust this if your training used a different mel pipeline.
-    """
-    # Resample if needed
+    """Mirrors src/preprocessing.py: resample → Butterworth → mel → normalize → pad."""
     if sr != SR_MODEL:
         y = librosa.resample(y, orig_sr=sr, target_sr=SR_MODEL)
         sr = SR_MODEL
 
-    mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=N_MELS, fmax=8000)
-    mel_db = librosa.power_to_db(mel, ref=np.max)
+    y = butterworth_filter(y, fs=sr)
 
-    feat = pad_or_truncate(mel_db, TARGET_FRAMES)   # (128, 63)
-    feat = feat[..., np.newaxis]                     # (128, 63, 1)
-    feat = np.expand_dims(feat, 0).astype(np.float32)  # (1, 128, 63, 1)
+    mel    = librosa.feature.melspectrogram(
+        y=y, sr=sr, n_fft=N_FFT, hop_length=HOP_LENGTH,
+        n_mels=N_MELS, fmin=FMIN, fmax=FMAX, power=2.0,
+    )
+    mel_db = librosa.power_to_db(mel, ref=np.max)
+    mel_db = (mel_db - mel_db.mean()) / (mel_db.std() + 1e-8)
+
+    feat = pad_or_truncate(mel_db, TARGET_FRAMES)      # (128, 126)
+    feat = feat[..., np.newaxis]                        # (128, 126, 1)
+    feat = np.expand_dims(feat, 0).astype(np.float32)  # (1, 128, 126, 1)
     return feat
 
 
@@ -121,25 +176,32 @@ def run_model(y, sr):
     Returns a dict:
         sound     → sorted list of {label, probability}
         diagnosis → sorted list of {label, probability}
+    Top sound prediction uses threshold-tuned weights; probabilities shown are raw softmax.
     """
     model = get_model()
     inp = preprocess_for_model(y, sr)
 
     sound_probs, diag_probs = model.predict(inp, verbose=0)
-    sound_probs = sound_probs[0].tolist()
-    diag_probs  = diag_probs[0].tolist()
+    raw_sound = sound_probs[0]           # raw softmax, shape (4,)
+    diag_probs = diag_probs[0].tolist()
 
-    sound_preds = sorted(
-        [{"label": cls, "probability": round(float(p), 4)}
-         for cls, p in zip(SOUND_CLASSES, sound_probs)],
-        key=lambda x: x["probability"], reverse=True,
-    )
+    # Apply threshold weights to pick predicted class (62.01% ICBHI tuning)
+    tuned = raw_sound * THRESHOLD_WEIGHTS
+    top_idx = int(np.argmax(tuned))
+
+    # Build display list: sort by raw probability but surface the tuned top class first
+    sound_preds = [
+        {"label": cls, "probability": round(float(p), 4), "tuned_top": (i == top_idx)}
+        for i, (cls, p) in enumerate(zip(SOUND_CLASSES, raw_sound.tolist()))
+    ]
+    sound_preds.sort(key=lambda x: (x["tuned_top"], x["probability"]), reverse=True)
+
     diag_preds = sorted(
         [{"label": cls, "probability": round(float(p), 4)}
          for cls, p in zip(DIAGNOSIS_CLASSES, diag_probs)],
         key=lambda x: x["probability"], reverse=True,
     )
-    return {"sound": sound_preds, "diagnosis": diag_preds}
+    return {"sound": sound_preds, "diagnosis": diag_preds, "tuned_top_idx": top_idx}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -150,7 +212,7 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def load_audio(filepath, sr=22050):
+def load_audio(filepath, sr=SR_MODEL):
     y, sr = librosa.load(filepath, sr=sr)
     return y, sr
 
@@ -357,12 +419,14 @@ def predict():
 
         sound = results["sound"]
         diag  = results["diagnosis"]
+        # sound[0] is already the threshold-tuned top class (sorted with tuned_top first)
+        top_sound = sound[0]
 
         return jsonify({
             "success": True,
             "model_pending": False,
             # Keys PredictionPanel.jsx reads
-            "top_prediction": {"disease": sound[0]["label"], "probability": sound[0]["probability"]},
+            "top_prediction": {"disease": top_sound["label"], "probability": top_sound["probability"]},
             "predictions":    [{"disease": p["label"], "probability": p["probability"]} for p in sound],
             # Diagnosis (bonus — available for future frontend use)
             "top_diagnosis":         {"disease": diag[0]["label"], "probability": diag[0]["probability"]},
