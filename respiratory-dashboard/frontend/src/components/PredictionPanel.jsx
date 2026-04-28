@@ -107,7 +107,7 @@ export default function PredictionPanel({ prediction, loading }) {
       {topDiag && (
         <div className="pred-top diagnosis-block">
           <div className="pred-top-left">
-            <p className="pred-label">Predicted Condition</p>
+            <p className="pred-label">Most Likely Predicted Condition</p>
             <h2 className="pred-disease">{topDiag.disease}</h2>
             <span className="pred-risk">
               Based on learned lung sound patterns

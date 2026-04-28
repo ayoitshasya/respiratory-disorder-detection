@@ -259,19 +259,6 @@ def compute_mfcc_image(y, sr):
     return _fig_to_b64(fig)
 
 
-def compute_chroma_image(y, sr):
-    fig, ax = make_axes()
-    chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-    img = librosa.display.specshow(chroma, sr=sr, x_axis="time", y_axis="chroma",
-                                   ax=ax, cmap="viridis")
-    try:
-        cb = fig.colorbar(img, ax=ax)
-        plt.setp(cb.ax.yaxis.get_ticklabels(), color="#8fa3bf")
-    except Exception:
-        pass
-    ax.set_xlabel("Time (s)"); ax.set_ylabel("Pitch class")
-    plt.tight_layout()
-    return _fig_to_b64(fig)
 
 
 def audio_metadata(y, sr, filepath):
@@ -321,12 +308,10 @@ def visualize():
                 "zcr":               compute_zcr(y, sr),
                 "mfcc_mean":         compute_mfcc_mean(y, sr),
                 "mfcc_over_time":    compute_mfcc_over_time(y, sr),
-                "chroma":            compute_chroma(y, sr),
             },
             "spectrograms": {
                 "mel":    compute_mel_spectrogram_image(y, sr),
                 "mfcc":   compute_mfcc_image(y, sr),
-                "chroma": compute_chroma_image(y, sr),
             },
         })
     except Exception as e:
