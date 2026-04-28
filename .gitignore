@@ -1,5 +1,8 @@
 data/processed/
 data/splits/
+data/cycles/
+data/raw/
+data/training_log.txt
 checkpoints/
 results/
 *.npy
@@ -10,3 +13,5 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 *.zip
+node_modules/
+.vite/
