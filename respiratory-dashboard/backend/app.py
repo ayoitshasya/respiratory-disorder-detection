@@ -199,17 +199,6 @@ def compute_mfcc_over_time(y, sr, n_mfcc=13, hop_length=512):
     return {"times": times[::step].tolist(), "matrix": mfcc_norm.tolist(), "n_mfcc": n_mfcc}
 
 
-def compute_chroma(y, sr, hop_length=512):
-    chroma = librosa.feature.chroma_stft(y=y, sr=sr, hop_length=hop_length)
-    frames = np.arange(chroma.shape[1])
-    times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
-    step = max(1, chroma.shape[1] // 200)
-    return {
-        "times": times[::step].tolist(),
-        "matrix": chroma[:, ::step].tolist(),
-        "pitch_classes": ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
-    }
-
 
 def compute_zcr(y, sr, hop_length=512):
     zcr = librosa.feature.zero_crossing_rate(y, hop_length=hop_length)[0]
@@ -423,3 +412,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[WARN] Could not pre-load model: {e}")
     app.run(debug=True, port=5000, host="0.0.0.0", use_reloader=False)
+
