@@ -168,9 +168,12 @@ TFLite int8 quantization for deployment on mobile/IoT devices.
 | **Multitask CNN** | **62.26%** | 21% | 97% | Sound + diagnosis, 2,891 samples |
 | Multitask + Synth v1 | 61.05% | 48% | 51% | 1,500 synthetic samples — Normal collapsed |
 | Multitask + Synth v2 | 56.28% | — | — | Asymmetric focal loss — unstable |
-| **Highres CNN** (current) | *training* | — | — | hop_length=256, 6,415 real+aug samples |
+| Highres CNN (raw) | 58.00% | 71% | 43% | hop_length=256, 6,415 samples — crackle recall 3.4x improvement |
+| **Highres CNN + Threshold Tuning** | **62.01%** | 59% | 49% | Post-hoc class weight tuning — all 4 classes detected |
 
-> **Current target:** 70% ICBHI with improved Crackle recall (was 21%).
+> **Final result:** 62.01% ICBHI with balanced per-class detection. Crackle recall improved from 21% (midterm) to 59% while maintaining competitive overall score. All 4 sound classes now detected vs midterm where Both recall was 0%.
+
+> **Threshold tuning:** After training, class probability weights [Normal=0.8, Crackle=0.5, Wheeze=2.0, Both=10.0] applied before argmax to rebalance predictions without retraining.
 
 > **Metric:** ICBHI Score = (Sensitivity + Specificity) / 2, averaged across all classes. Accuracy is misleading due to class imbalance (57% Normal). A model predicting Normal for everything gets 57% accuracy but ICBHI of 50%.
 
