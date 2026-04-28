@@ -13,9 +13,9 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 import tensorflow as tf
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-BASE          = os.path.dirname(os.path.abspath(__file__))
+BASE          = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST_PATH = os.path.join(BASE, 'data', 'processed', 'manifest_aug_modest.csv')
 MODEL_PATH    = os.path.join(BASE, 'data', 'checkpoints', 'highres_best.keras')
 OUT_PATH      = os.path.join(BASE, 'data', 'results', 'threshold_sweep.png')

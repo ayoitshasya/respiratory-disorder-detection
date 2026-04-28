@@ -14,9 +14,9 @@ import pandas as pd
 import librosa
 from tqdm import tqdm
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-BASE      = os.path.dirname(os.path.abspath(__file__))
+BASE      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST  = os.path.join(BASE, 'data', 'processed', 'manifest.csv')
 AUG_DIR   = os.path.join(BASE, 'data', 'processed', 'train_aug_modest')
 os.makedirs(AUG_DIR, exist_ok=True)

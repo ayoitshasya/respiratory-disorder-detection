@@ -13,10 +13,10 @@ import os
 import sys
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.synthetic_generator import generate_synthetic_features, DEFAULT_TARGETS
 
-BASE          = os.path.dirname(os.path.abspath(__file__))
+BASE          = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST_PATH = os.path.join(BASE, 'data', 'processed', 'manifest.csv')
 OUTPUT_DIR    = os.path.join(BASE, 'data', 'processed', 'train_synthetic')
 

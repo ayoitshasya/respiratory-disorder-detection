@@ -6,12 +6,12 @@ Run once after changing HOP_LENGTH in preprocessing.py:
     python reextract_features.py
 """
 import os, sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 from src.preprocessing import cache_features
 
-BASE         = os.path.dirname(os.path.abspath(__file__))
+BASE         = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST_CSV = os.path.join(BASE, 'data', 'processed', 'manifest.csv')
 
 print("=" * 65)

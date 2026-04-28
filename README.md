@@ -54,16 +54,16 @@ Secondary task: predict patient diagnosis (COPD, Pneumonia, URTI, etc.) from the
 
 ```
 resp-detection/
-├── train_baseline.py           # Baseline CNN — sound classification only
-├── multitask_model.py          # Multitask CNN — sound + diagnosis heads (proven baseline)
-├── train_with_synthetic.py     # Multitask CNN + synthetic data (experimental)
-├── train_highres.py            # Multitask CNN + hop_length=256 + modest aug (current best attempt)
-├── generate_synthetic.py       # Generate synthetic crackle/wheeze/both samples
-├── augment_minority.py         # Original heavy augmentation (abandoned — caused collapse)
-├── augment_modest.py           # Modest real-data augmentation (2–5x minority classes)
-├── reextract_features.py       # Re-extract features after hop_length change
-├── configs/
-│   └── experiment_config.json  # Hyperparameters
+├── scripts/
+│   ├── train_baseline.py       # Baseline CNN — sound classification only
+│   ├── train_multitask.py      # Multitask CNN — sound + diagnosis heads (proven baseline)
+│   ├── train_with_synthetic.py # Multitask CNN + synthetic data (experimental)
+│   ├── train_highres.py        # Multitask CNN + hop_length=256 + modest aug (current best)
+│   ├── generate_synthetic.py   # Generate synthetic crackle/wheeze/both samples
+│   ├── augment_minority.py     # Heavy augmentation (abandoned — caused collapse)
+│   ├── augment_modest.py       # Modest real-data augmentation (2–5x minority classes)
+│   ├── reextract_features.py   # Re-extract features after hop_length change
+│   └── threshold_sweep.py      # Post-hoc class weight tuning — visualises ICBHI vs weight
 ├── src/
 │   ├── data_loader.py          # Patient-level train/val/test splits
 │   ├── preprocessing.py        # Butterworth filter, mel-spectrogram (hop_length=256)
@@ -74,18 +74,26 @@ resp-detection/
 │   ├── training.py             # Focal loss, cosine LR, ICBHI score tracking
 │   ├── evaluation.py           # Confusion matrix, metrics, training curves
 │   └── export_tflite.py        # TFLite int8 quantization export
+├── pytorch_models/
+│   ├── sound_classification/   # PyTorch EfficientNet CNNs (v2/v3/v4 iterations)
+│   └── diagnosis/              # PyTorch patient diagnosis model (k-fold CV)
+├── respiratory-dashboard/
+│   ├── backend/                # Flask API — model inference + audio visualisation
+│   └── frontend/               # React dashboard — upload WAV, display predictions
+├── experiments/                # Abandoned approaches (ResNet, heavy augmentation)
+├── tests/                      # Test cases and results
+├── configs/
+│   └── experiment_config.json  # Hyperparameters
 └── data/                       # Not tracked in git — see Google Drive
     ├── checkpoints/            # Saved .keras model files
     ├── results/                # Training curves, confusion matrices (PNG)
     └── processed/
         ├── manifest.csv              # Original splits (5,319 samples)
         ├── manifest_aug_modest.csv   # Modest augmented splits (6,415 train samples)
-        ├── manifest_synthetic.csv    # Synthetic samples manifest
         ├── train/                    # Mel spectrogram .npy (hop_length=256)
-        ├── val/                      # Mel spectrogram .npy files (val)
-        ├── test/                     # Mel spectrogram .npy files (test)
-        ├── train_aug_modest/         # Modest augmented .npy files
-        └── train_synthetic/          # Synthetic .npy files
+        ├── val/                      # Mel spectrogram .npy files
+        ├── test/                     # Mel spectrogram .npy files
+        └── train_aug_modest/         # Modest augmented .npy files
 ```
 
 ## Pipeline
@@ -187,30 +195,30 @@ pip install tensorflow librosa soundfile scikit-learn pandas numpy matplotlib se
 
 ### Train baseline CNN
 ```bash
-python train_baseline.py
+python scripts/train_baseline.py
 ```
 
 ### Train multitask CNN (proven baseline — 62.26% ICBHI)
 ```bash
-python multitask_model.py
+python scripts/train_multitask.py
 ```
 
 ### Train high-resolution model (current best attempt)
 ```bash
 # Step 1: Re-extract features with hop_length=256
-python reextract_features.py
+python scripts/reextract_features.py
 
 # Step 2: Generate modest augmentation (2-5x minority classes)
-python augment_modest.py
+python scripts/augment_modest.py
 
 # Step 3: Train
-python train_highres.py
+python scripts/train_highres.py
 ```
 
 ### Generate synthetic data (experimental)
 ```bash
-python generate_synthetic.py       # generates 700 synthetic samples
-python train_with_synthetic.py     # trains with synthetic + real data
+python scripts/generate_synthetic.py   # generates 700 synthetic samples
+python scripts/train_with_synthetic.py # trains with synthetic + real data
 ```
 
 ### Run on Google Colab
