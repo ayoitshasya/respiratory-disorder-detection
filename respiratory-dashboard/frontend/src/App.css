@@ -103,6 +103,73 @@ body {
   font-size: 12px;
 }
 
+.action-button {
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s, border-color 0.2s;
+}
+
+.action-button:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.audio-preview-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-top: 12px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.audio-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+}
+
+.audio-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.audio-name {
+  font-size: 14px;
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.audio-player {
+  width: 100%;
+  max-width: 380px;
+}
+
+@media (max-width: 640px) {
+  .audio-preview-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .audio-preview-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .app-title {
   font-size: 22px;
   font-weight: 700;

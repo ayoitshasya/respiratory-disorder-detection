@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import UploadZone from "./components/UploadZone";
+import Recorder from "./components/Recorder";
 import WaveformPanel from "./components/WaveformPanel";
 import SpectrogramPanel from "./components/SpectrogramPanel";
 import PredictionPanel from "./components/PredictionPanel";
@@ -16,6 +17,7 @@ export default function App() {
   const [prediction, setPrediction] = useState(null);   // null | { model_pending } | { predictions }
   const [errorMsg, setErrorMsg]     = useState("");
   const [currentFile, setCurrentFile] = useState(null);
+  const [audioSrc, setAudioSrc] = useState(null);
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "dark";
     return window.localStorage.getItem("pulmoscan-theme") || "dark";
@@ -27,13 +29,23 @@ export default function App() {
     window.localStorage.setItem("pulmoscan-theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    return () => {
+      if (audioSrc) URL.revokeObjectURL(audioSrc);
+    };
+  }, [audioSrc]);
+
   const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
+
+  const [showRecorder, setShowRecorder] = useState(false);
 
   async function handleFile(file) {
     setStatus("processing");
     setVizData(null);
     setPrediction(null);
     setErrorMsg("");
+    if (audioSrc) URL.revokeObjectURL(audioSrc);
+    setAudioSrc(URL.createObjectURL(file));
     setCurrentFile(file);
 
     // ── Phase 1: always fetch visualizations ──────────────────────────────
@@ -91,6 +103,7 @@ export default function App() {
             </span>
             <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
           </button>
+          <button className="action-button" onClick={() => setShowRecorder(true)}>Record</button>
           <StatusBadge status={status} />
         </div>
       </header>
@@ -98,6 +111,17 @@ export default function App() {
       <main className="app-main">
         <section className="upload-section">
           <UploadZone onFile={handleFile} status={status} />
+          {audioSrc && (
+            <div className="audio-preview-card">
+              <div className="audio-preview-row">
+                <div>
+                  <div className="audio-label">Loaded audio</div>
+                  <div className="audio-name">{currentFile?.name || "Recorded audio"}</div>
+                </div>
+                <audio controls src={audioSrc} className="audio-player" />
+              </div>
+            </div>
+          )}
           {status === "error" && (
             <div className="error-banner">
               <span>⚠</span> {errorMsg}
@@ -114,12 +138,23 @@ export default function App() {
           </>
         )}
 
+
         {status === "idle" && (
           <div className="idle-hint">
             Upload a <strong>.wav</strong> lung auscultation recording to begin analysis
           </div>
         )}
       </main>
+      {showRecorder && (
+        <Recorder
+          maxSeconds={10}
+          onComplete={(file) => {
+            setShowRecorder(false);
+            handleFile(file);
+          }}
+          onClose={() => setShowRecorder(false)}
+        />
+      )}
     </div>
   );
 }
