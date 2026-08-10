@@ -1,4 +1,28 @@
 /* ── Tokens ─────────────────────────────────────────────────────────────── */
+html.theme-dark {
+  color-scheme: dark;
+}
+
+html.theme-light {
+  color-scheme: light;
+  --bg-base:    #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-card:    #f3f4f6;
+  --bg-raised:  #e5e7eb;
+  --border:     #d1d5db;
+  --border-hi:  #9ca3af;
+  --accent:     #2563eb;
+  --accent-dim: #1d4ed8;
+  --accent-glow:#bfdbfe;
+  --teal:       #0f766e;
+  --green:      #16a34a;
+  --amber:      #c2410c;
+  --red:        #b91c1c;
+  --text-1:     #0f172a;
+  --text-2:     #475569;
+  --text-3:     #64748b;
+}
+
 :root {
   --bg-base:    #0a0d13;
   --bg-surface: #111722;
@@ -44,7 +68,40 @@ body {
 }
 
 .header-left { display: flex; align-items: center; gap: 14px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
 .logo-mark { display: flex; align-items: center; }
+
+.theme-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-1);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.theme-switcher:hover {
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+
+.theme-switcher-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(59,130,246,0.12);
+  color: var(--accent);
+  font-size: 12px;
+}
 
 .app-title {
   font-size: 22px;

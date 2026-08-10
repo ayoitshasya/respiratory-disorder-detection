@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import UploadZone from "./components/UploadZone";
 import WaveformPanel from "./components/WaveformPanel";
 import SpectrogramPanel from "./components/SpectrogramPanel";
@@ -16,6 +16,18 @@ export default function App() {
   const [prediction, setPrediction] = useState(null);   // null | { model_pending } | { predictions }
   const [errorMsg, setErrorMsg]     = useState("");
   const [currentFile, setCurrentFile] = useState(null);
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === "undefined") return "dark";
+    return window.localStorage.getItem("pulmoscan-theme") || "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("theme-light", theme === "light");
+    document.documentElement.classList.toggle("theme-dark", theme === "dark");
+    window.localStorage.setItem("pulmoscan-theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
 
   async function handleFile(file) {
     setStatus("processing");
@@ -71,7 +83,16 @@ export default function App() {
             <p className="app-subtitle">Respiratory Disease Detection</p>
           </div>
         </div>
-        <StatusBadge status={status} />
+
+        <div className="header-right">
+          <button className="theme-switcher" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
+            <span className="theme-switcher-icon" aria-hidden="true">
+              {theme === "dark" ? "☀️" : "🌙"}
+            </span>
+            <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+          </button>
+          <StatusBadge status={status} />
+        </div>
       </header>
 
       <main className="app-main">

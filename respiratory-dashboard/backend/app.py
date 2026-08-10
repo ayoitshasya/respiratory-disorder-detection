@@ -50,7 +50,7 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # ── Model config — must match training hyperparameters exactly ────────────────
 _BASE_DIR     = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MODEL_PATH    = os.path.join(_BASE_DIR, 'data', 'checkpoints', 'highres_best.keras')
+MODEL_PATH    = 'highres_best.keras'  # trained weights file (must be in same dir as app.py)
 TARGET_FRAMES = 126
 N_MELS        = 128
 SR_MODEL      = 16000   # sample rate used during training
