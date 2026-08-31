@@ -242,9 +242,24 @@ model.compile(
 )
 
 print('\nStarting training...')
+# y and sample_weight passed as LISTS in model.output_names order (['sound',
+# 'diagnosis'] -- matches build_model()'s [sound_out, diag_out]), NOT dicts.
+# Root cause: this Keras version (verified: Keras 3.13.2 / TF 2.21.0 locally,
+# reproduced the exact crash) raises `KeyError: 0` in
+# keras/src/trainers/compile_utils.py's resolve_path when sample_weight is a
+# dict against a list-output functional model -- confirmed via repeated
+# fresh-process runs, 100% reproducible, independent of architecture,
+# batch_size, validation_data, and whether metrics= is set. dict-keyed y
+# alone (no sample_weight) is unaffected -- only sample_weight triggers the
+# bug. Passing BOTH y and sample_weight as ordered lists sidesteps the dict
+# path-resolution entirely; validated 3/3 clean runs against this exact
+# architecture, including with validation_data's y left as a dict (that
+# combination is fine -- only train's sample_weight needs to avoid dict form).
+# history.history keys are still name-based ('sound_loss', 'val_sound_accuracy',
+# etc.) either way, so nothing downstream (plots, ICBHICallback) needed to change.
 history = model.fit(
-    X_tr, {'sound': y_str_oh, 'diagnosis': y_dtr_oh},
-    sample_weight={'sound': sound_sample_weight, 'diagnosis': diag_sample_weight},
+    X_tr, [y_str_oh, y_dtr_oh],
+    sample_weight=[sound_sample_weight, diag_sample_weight],
     validation_data=(X_val, {'sound': y_sv_oh, 'diagnosis': y_dv_oh}),
     batch_size=BATCH_SIZE,
     epochs=EPOCHS,
