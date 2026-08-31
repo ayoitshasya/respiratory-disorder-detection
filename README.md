@@ -2,6 +2,11 @@
 
 ML pipeline for classifying respiratory sounds from the ICBHI 2017 dataset using CNNs.
 
+## Recent Updates
+
+- **HF_Lung_V1 merged into the training pipeline** (branch `hf-lung-baseline`): 9,765 event-timestamped 15s clips windowed into 41,533 labeled samples (`src/hf_lung_labels.py`, `src/hf_lung_split.py`, `scripts/hf_lung_step2_label_counts.py` through `hf_lung_step4_build_manifest.py`), date-grouped size-aware split, merged with ICBHI into `data/processed/manifest_merged.csv` (`source_dataset` column: `icbhi`/`hf_lung`). ICBHI's original locked split/manifest are untouched.
+- **`scripts/train_multitask.py` updated for the merged dataset**: diagnosis-loss masking for HF_Lung rows (no diagnosis labels), batched val/test inference (avoids GPU OOM from a single unbatched forward pass), full/icbhi-only/hf_lung-only test-set evaluation, and source-aware sample weighting (`ICBHI_SOURCE_WEIGHT`) to correct for HF_Lung being ~90% of training rows — an unweighted merge regressed ICBHI-only test performance to 51.96% (below the 62.26% baseline) despite a strong combined score. Runs are checkpointed separately (`multitask_combined_*`, `multitask_sourceweighted_*`) so the original ICBHI-only baseline stays on disk for comparison.
+
 ## Problem Statement
 
 Classify lung sound recordings into 4 categories:
