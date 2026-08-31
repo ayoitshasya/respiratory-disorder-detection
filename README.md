@@ -12,6 +12,16 @@ Classify lung sound recordings into 4 categories:
 
 Secondary task: predict patient diagnosis (COPD, Pneumonia, URTI, etc.) from the same audio input.
 
+## Sem 7 Reorg
+
+`scripts/train_multitask.py` has been reverted to the original proven baseline (no SE-attention
+blocks, no effective-number class weighting) for a clean sem-7 restart. All abandoned/experimental
+code — the highres/SE-block variant, synthetic data generation, heavy/modest augmentation, the
+single-task baseline, threshold tuning, and the early `experiments/` framework — moved to
+`failed_experiments_sem7/`. It's kept for reference, not deleted. The sections below (Pipeline,
+Results, Key Design Decisions) document that history and are left as-is even where they describe
+now-relocated code.
+
 ## Dataset
 
 **ICBHI 2017** — 101 patients, 5,319 respiratory cycles recorded across multiple chest locations.
@@ -55,35 +65,32 @@ Secondary task: predict patient diagnosis (COPD, Pneumonia, URTI, etc.) from the
 ```
 resp-detection/
 ├── scripts/
-│   ├── train_baseline.py       # Baseline CNN — sound classification only
-│   ├── train_multitask.py      # Multitask CNN — sound + diagnosis heads (proven baseline)
-│   ├── train_with_synthetic.py # Multitask CNN + synthetic data (experimental)
-│   ├── train_highres.py        # Multitask CNN + hop_length=256 + modest aug (current best)
-│   ├── generate_synthetic.py   # Generate synthetic crackle/wheeze/both samples
-│   ├── augment_minority.py     # Heavy augmentation (abandoned — caused collapse)
-│   ├── augment_modest.py       # Modest real-data augmentation (2–5x minority classes)
-│   ├── reextract_features.py   # Re-extract features after hop_length change
-│   └── threshold_sweep.py      # Post-hoc class weight tuning — visualises ICBHI vs weight
+│   └── train_multitask.py      # Multitask CNN — sound + diagnosis heads (proven baseline, 62.26% ICBHI)
 ├── src/
-│   ├── data_loader.py          # Patient-level train/val/test splits
-│   ├── preprocessing.py        # Butterworth filter, mel-spectrogram (hop_length=256)
-│   ├── augmentation.py         # Audio augmentation + SpecAugment
-│   ├── synthetic_generator.py  # Mathematical synthesis of wheeze/crackle/both
-│   ├── models.py               # CNN architectures
-│   ├── multitask_model.py      # Shared backbone + sound + diagnosis heads
-│   ├── training.py             # Focal loss, cosine LR, ICBHI score tracking
-│   ├── evaluation.py           # Confusion matrix, metrics, training curves
+│   ├── preprocessing.py        # Butterworth filter, mel-spectrogram
 │   └── export_tflite.py        # TFLite int8 quantization export
 ├── pytorch_models/
-│   ├── sound_classification/   # PyTorch EfficientNet CNNs (v2/v3/v4 iterations)
+│   ├── sound_classification/   # PyTorch EfficientNet CNNs (v2/v3/v4 iterations) — TTA reference
 │   └── diagnosis/              # PyTorch patient diagnosis model (k-fold CV)
 ├── respiratory-dashboard/
 │   ├── backend/                # Flask API — model inference + audio visualisation
 │   └── frontend/               # React dashboard — upload WAV, display predictions
-├── experiments/                # Abandoned approaches (ResNet, heavy augmentation)
+├── failed_experiments_sem7/    # Abandoned/superseded sem-7 experiments (kept for reference)
+│   ├── train_baseline.py       # Single-task CNN predecessor (59.80% ICBHI)
+│   ├── train_highres.py        # Multitask CNN + hop_length=256 + SE blocks + modest aug
+│   ├── train_with_synthetic.py # Multitask CNN + synthetic data
+│   ├── generate_synthetic.py   # Synthetic crackle/wheeze/both generation
+│   ├── augment_minority.py     # Heavy augmentation (abandoned — caused collapse)
+│   ├── augment_modest.py       # Modest real-data augmentation (2–5x minority classes)
+│   ├── reextract_features.py   # Re-extract features after hop_length change
+│   ├── threshold_sweep.py      # Post-hoc class weight tuning — visualises ICBHI vs weight
+│   ├── experiments/            # Early config-driven framework + ResNet experiment
+│   └── src/                    # models.py, multitask_model.py, training.py, data_loader.py,
+│                                # evaluation.py, augmentation.py, synthetic_generator.py —
+│                                # unused by the current scripts/train_multitask.py pipeline
 ├── tests/                      # Test cases and results
 ├── configs/
-│   └── experiment_config.json  # Hyperparameters
+│   └── experiment_config.json  # Hyperparameters (used by the retired experiments/ framework)
 └── data/                       # Not tracked in git — see Google Drive
     ├── checkpoints/            # Saved .keras model files
     ├── results/                # Training curves, confusion matrices (PNG)
@@ -193,32 +200,23 @@ TFLite int8 quantization for deployment on mobile/IoT devices.
 pip install tensorflow librosa soundfile scikit-learn pandas numpy matplotlib seaborn
 ```
 
-### Train baseline CNN
-```bash
-python scripts/train_baseline.py
-```
-
 ### Train multitask CNN (proven baseline — 62.26% ICBHI)
 ```bash
 python scripts/train_multitask.py
 ```
 
-### Train high-resolution model (current best attempt)
+### Retired experiments (see `failed_experiments_sem7/`)
 ```bash
-# Step 1: Re-extract features with hop_length=256
-python scripts/reextract_features.py
+python failed_experiments_sem7/train_baseline.py        # single-task CNN predecessor
 
-# Step 2: Generate modest augmentation (2-5x minority classes)
-python scripts/augment_modest.py
+# highres/SE-block variant
+python failed_experiments_sem7/reextract_features.py
+python failed_experiments_sem7/augment_modest.py
+python failed_experiments_sem7/train_highres.py
 
-# Step 3: Train
-python scripts/train_highres.py
-```
-
-### Generate synthetic data (experimental)
-```bash
-python scripts/generate_synthetic.py   # generates 700 synthetic samples
-python scripts/train_with_synthetic.py # trains with synthetic + real data
+# synthetic data
+python failed_experiments_sem7/generate_synthetic.py
+python failed_experiments_sem7/train_with_synthetic.py
 ```
 
 ### Run on Google Colab

@@ -108,39 +108,21 @@ y_sv_oh  = tf.keras.utils.to_categorical(y_sv,  NUM_SOUND)
 y_dv_oh  = tf.keras.utils.to_categorical(y_dv,  NUM_DIAGNOSIS)
 
 
-# ── Model ─────────────────────────────────────────────────────
-def se_block(x, filters, ratio=8):
-    """Squeeze-and-Excitation channel attention (~2K params per block)."""
-    s = tf.keras.layers.GlobalAveragePooling2D()(x)
-    s = tf.keras.layers.Dense(max(1, filters // ratio), activation='relu')(s)
-    s = tf.keras.layers.Dense(filters, activation='sigmoid')(s)
-    s = tf.keras.layers.Reshape((1, 1, filters))(s)
-    return tf.keras.layers.Multiply()([x, s])
-
-
+# ── Model — same proven architecture as baseline CNN ───────────
 def build_model():
     inp = tf.keras.Input(shape=(N_MELS, TARGET_FRAMES, 1))
-
     x = tf.keras.layers.Conv2D(32, 3, padding='same', activation='relu')(inp)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = se_block(x, 32)
     x = tf.keras.layers.MaxPooling2D(2)(x)
-
     x = tf.keras.layers.Conv2D(64, 3, padding='same', activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = se_block(x, 64)
     x = tf.keras.layers.MaxPooling2D(2)(x)
-
     x = tf.keras.layers.Conv2D(128, 3, padding='same', activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = se_block(x, 128)
     x = tf.keras.layers.MaxPooling2D(2)(x)
-
     x = tf.keras.layers.Conv2D(256, 3, padding='same', activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = se_block(x, 256)
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
-
     shared = tf.keras.layers.Dense(256, activation='relu')(x)
     shared = tf.keras.layers.Dropout(0.5)(shared)
 
@@ -171,14 +153,11 @@ callbacks = [
     tf.keras.callbacks.LearningRateScheduler(lr_schedule, verbose=0),
 ]
 
-# Effective Number of Samples weighting (more principled than sklearn 'balanced')
-counts  = np.bincount(y_str, minlength=NUM_SOUND).astype(float)
-beta    = (counts.sum() - 1.0) / counts.sum()
-eff_n   = (1.0 - np.power(beta, counts)) / (1.0 - beta)
-cw_arr  = 1.0 / eff_n
-cw_arr  = cw_arr / cw_arr.mean()
-cw_list = [float(cw_arr[i]) for i in range(NUM_SOUND)]
-print(f'Class weights (effective num): {cw_list}')
+# Class weights baked into focal loss
+from sklearn.utils.class_weight import compute_class_weight
+cw = compute_class_weight('balanced', classes=np.unique(y_str), y=y_str)
+cw_list = [float(cw[i]) for i in range(NUM_SOUND)]
+print(f'Class weights: {cw_list}')
 
 model.compile(
     optimizer=tf.keras.optimizers.Adam(LR),
