@@ -17,7 +17,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report
-from sklearn.utils.class_weight import compute_class_weight
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
@@ -151,20 +150,42 @@ y_dv_oh  = tf.keras.utils.to_categorical(y_dv,  NUM_DIAGNOSIS)
 
 
 # ── Model ─────────────────────────────────────────────────────
+def se_block(x, filters, ratio=8):
+    """
+    Squeeze-and-Excitation channel attention.
+    Squeezes spatial dims → two FC layers → sigmoid gate → scale channels.
+    Adds ~2K params per block; forces the CNN to weight discriminative
+    frequency bands (e.g. 200-600 Hz crackle region) over background noise.
+    """
+    s = tf.keras.layers.GlobalAveragePooling2D()(x)
+    s = tf.keras.layers.Dense(max(1, filters // ratio), activation='relu')(s)
+    s = tf.keras.layers.Dense(filters, activation='sigmoid')(s)
+    s = tf.keras.layers.Reshape((1, 1, filters))(s)
+    return tf.keras.layers.Multiply()([x, s])
+
+
 def build_model():
     inp = tf.keras.Input(shape=(N_MELS, TARGET_FRAMES, 1))
-    x   = tf.keras.layers.Conv2D(32,  3, padding='same', activation='relu')(inp)
-    x   = tf.keras.layers.BatchNormalization()(x)
-    x   = tf.keras.layers.MaxPooling2D(2)(x)
-    x   = tf.keras.layers.Conv2D(64,  3, padding='same', activation='relu')(x)
-    x   = tf.keras.layers.BatchNormalization()(x)
-    x   = tf.keras.layers.MaxPooling2D(2)(x)
-    x   = tf.keras.layers.Conv2D(128, 3, padding='same', activation='relu')(x)
-    x   = tf.keras.layers.BatchNormalization()(x)
-    x   = tf.keras.layers.MaxPooling2D(2)(x)
-    x   = tf.keras.layers.Conv2D(256, 3, padding='same', activation='relu')(x)
-    x   = tf.keras.layers.BatchNormalization()(x)
-    x   = tf.keras.layers.GlobalAveragePooling2D()  (x)
+
+    x = tf.keras.layers.Conv2D(32,  3, padding='same', activation='relu')(inp)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = se_block(x, 32)
+    x = tf.keras.layers.MaxPooling2D(2)(x)
+
+    x = tf.keras.layers.Conv2D(64,  3, padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = se_block(x, 64)
+    x = tf.keras.layers.MaxPooling2D(2)(x)
+
+    x = tf.keras.layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = se_block(x, 128)
+    x = tf.keras.layers.MaxPooling2D(2)(x)
+
+    x = tf.keras.layers.Conv2D(256, 3, padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = se_block(x, 256)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
 
     shared = tf.keras.layers.Dense(256, activation='relu')(x)
     shared = tf.keras.layers.Dropout(0.5)(shared)
@@ -198,9 +219,15 @@ callbacks = [
     tf.keras.callbacks.LearningRateScheduler(lr_schedule, verbose=0),
 ]
 
-cw      = compute_class_weight('balanced', classes=np.unique(y_str), y=y_str)
-cw_list = [float(cw[i]) for i in range(NUM_SOUND)]
-print(f'Class weights: {cw_list}')
+# Effective Number of Samples weighting (Cui et al. 2019) — more principled than
+# 'balanced' for heavy imbalance. Both class has only 203 real samples.
+counts  = np.bincount(y_str, minlength=NUM_SOUND).astype(float)
+beta    = (counts.sum() - 1.0) / counts.sum()
+eff_n   = (1.0 - np.power(beta, counts)) / (1.0 - beta)
+cw_arr  = 1.0 / eff_n
+cw_arr  = cw_arr / cw_arr.mean()    # normalise to mean=1 to keep loss scale stable
+cw_list = [float(cw_arr[i]) for i in range(NUM_SOUND)]
+print(f'Class weights (effective num): {cw_list}')
 
 model.compile(
     optimizer=tf.keras.optimizers.Adam(LR),

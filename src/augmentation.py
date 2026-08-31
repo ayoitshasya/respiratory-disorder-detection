@@ -165,21 +165,34 @@ def apply_spec_augment_to_batch(X_batch, y_batch):
 # Class imbalance utilities
 # ─────────────────────────────────────────────
 
-def compute_class_weights(labels, num_classes):
+def compute_class_weights(labels, num_classes, method='inverse_freq'):
     """
-    Compute class weights inversely proportional to class frequency.
+    Compute class weights for focal loss to handle class imbalance.
 
     Args:
         labels:      1D array of integer class labels
         num_classes: Total number of classes
+        method:      'inverse_freq' (classic) or 'effective_num' (Class-Balanced Loss,
+                     Cui et al. 2019). 'effective_num' is more principled for heavy
+                     imbalance — recommended for ICBHI (Both has only 203 samples).
 
     Returns:
         dict mapping class_index → weight
     """
     counts = np.bincount(labels, minlength=num_classes).astype(float)
-    counts = np.where(counts == 0, 1, counts)   # avoid division by zero
-    total  = counts.sum()
-    weights = total / (num_classes * counts)
+    counts = np.where(counts == 0, 1, counts)
+
+    if method == 'effective_num':
+        # E(n) = (1 - β^n) / (1 - β)  where β = (N-1)/N
+        beta = (counts.sum() - 1.0) / counts.sum()
+        effective_n = (1.0 - np.power(beta, counts)) / (1.0 - beta)
+        weights = 1.0 / effective_n
+    else:
+        total = counts.sum()
+        weights = total / (num_classes * counts)
+
+    # Normalise so the mean weight is 1.0 (keeps loss scale stable)
+    weights = weights / weights.mean()
     return {i: float(w) for i, w in enumerate(weights)}
 
 
