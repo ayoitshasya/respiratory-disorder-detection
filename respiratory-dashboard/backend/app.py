@@ -19,10 +19,6 @@ Threshold weights [Normal=0.8, Crackle=0.5, Wheeze=2.0, Both=10.0] are applied
 to the softmax output before argmax to correct class imbalance at inference time.
 This post-hoc tuning improved ICBHI score from 58% to 62.01% without retraining.
 
-Test-Time Augmentation (TTA): at inference, 5 augmented versions of the input are
-averaged (time-stretch ×0.93/×1.08, light noise, pitch-shift +0.5 st, original).
-This further improves robustness ~1-2% ICBHI with no retraining required.
-
 Run:
     python app.py
 
@@ -81,47 +77,24 @@ DIAGNOSIS_CLASSES = ["Healthy", "COPD", "URTI", "Bronchiectasis",
 # ── Load model once at startup ────────────────────────────────────────────────
 _model = None
 
-def _se_block(x, filters, ratio=8):
-    """Squeeze-and-Excitation attention — must mirror train_highres.py exactly."""
-    import tensorflow as tf
-    s = tf.keras.layers.GlobalAveragePooling2D()(x)
-    s = tf.keras.layers.Dense(max(1, filters // ratio), activation='relu')(s)
-    s = tf.keras.layers.Dense(filters, activation='sigmoid')(s)
-    s = tf.keras.layers.Reshape((1, 1, filters))(s)
-    return tf.keras.layers.Multiply()([x, s])
-
-
 def build_model():
-    """
-    Rebuild the exact same architecture from train_highres.py.
-    IMPORTANT: this must stay in sync with scripts/train_highres.py build_model().
-    SE blocks add ~22K params total; architecture must match saved weights exactly.
-    """
+    """Rebuild the exact same architecture from training."""
     import tensorflow as tf
     NUM_SOUND = 4; NUM_DIAGNOSIS = 7
 
     inp = tf.keras.Input(shape=(N_MELS, TARGET_FRAMES, 1))
-
-    x = tf.keras.layers.Conv2D(32,  3, padding='same', activation='relu')(inp)
+    x = tf.keras.layers.Conv2D(32, 3, padding='same', activation='relu')(inp)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = _se_block(x, 32)
     x = tf.keras.layers.MaxPooling2D(2)(x)
-
-    x = tf.keras.layers.Conv2D(64,  3, padding='same', activation='relu')(x)
+    x = tf.keras.layers.Conv2D(64, 3, padding='same', activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = _se_block(x, 64)
     x = tf.keras.layers.MaxPooling2D(2)(x)
-
     x = tf.keras.layers.Conv2D(128, 3, padding='same', activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = _se_block(x, 128)
     x = tf.keras.layers.MaxPooling2D(2)(x)
-
     x = tf.keras.layers.Conv2D(256, 3, padding='same', activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = _se_block(x, 256)
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
-
     shared = tf.keras.layers.Dense(256, activation='relu')(x)
     shared = tf.keras.layers.Dropout(0.5)(shared)
 
@@ -198,64 +171,25 @@ def preprocess_for_model(y, sr):
 # Model inference
 # ─────────────────────────────────────────────────────────────────────────────
 
-def tta_augmentations(y, sr):
-    """
-    Return a list of lightly augmented audio signals for Test-Time Augmentation.
-    All variants are mild (no OOD risk) so the model sees plausible real-world inputs.
-    Failures are silently skipped — at minimum the original signal is returned.
-    """
-    versions = [y]
-    try:
-        versions.append(librosa.effects.time_stretch(y, rate=0.93))
-    except Exception:
-        pass
-    try:
-        versions.append(librosa.effects.time_stretch(y, rate=1.08))
-    except Exception:
-        pass
-    try:
-        # SNR ~35 dB — imperceptible noise, adds microphone-variability robustness
-        noise = np.random.default_rng(42).normal(0, np.std(y) * 0.018, len(y)).astype(np.float32)
-        versions.append(np.clip(y + noise, -1.0, 1.0))
-    except Exception:
-        pass
-    try:
-        versions.append(librosa.effects.pitch_shift(y, sr=sr, n_steps=0.5))
-    except Exception:
-        pass
-    return versions
-
-
 def run_model(y, sr):
     """
-    Returns a dict with sound/diagnosis predictions.
-    Uses Test-Time Augmentation: averages softmax outputs across 5 augmented
-    versions of the input before applying threshold weights. ~+1-2% ICBHI
-    improvement with no retraining required.
-
-    Keys:
+    Returns a dict:
         sound     → sorted list of {label, probability}
         diagnosis → sorted list of {label, probability}
+    Top sound prediction uses threshold-tuned weights; probabilities shown are raw softmax.
     """
     model = get_model()
+    inp = preprocess_for_model(y, sr)
 
-    # Build a batch from TTA variants: (N, 128, 126, 1)
-    aug_versions = tta_augmentations(y, sr)
-    batch = np.stack(
-        [preprocess_for_model(y_aug, sr)[0] for y_aug in aug_versions],
-        axis=0,
-    ).astype(np.float32)
+    sound_probs, diag_probs = model.predict(inp, verbose=0)
+    raw_sound = sound_probs[0]           # raw softmax, shape (4,)
+    diag_probs = diag_probs[0].tolist()
 
-    # Single batched forward pass — more efficient than N separate predict() calls
-    sound_batch, diag_batch = model.predict(batch, verbose=0)
-
-    # Average softmax outputs across TTA versions then apply threshold weights
-    raw_sound = np.mean(sound_batch, axis=0)   # (4,)
-    diag_probs = np.mean(diag_batch, axis=0).tolist()  # (7,)
-
+    # Apply threshold weights to pick predicted class (62.01% ICBHI tuning)
     tuned = raw_sound * THRESHOLD_WEIGHTS
     top_idx = int(np.argmax(tuned))
 
+    # Build display list: sort by raw probability but surface the tuned top class first
     sound_preds = [
         {"label": cls, "probability": round(float(p), 4), "tuned_top": (i == top_idx)}
         for i, (cls, p) in enumerate(zip(SOUND_CLASSES, raw_sound.tolist()))
